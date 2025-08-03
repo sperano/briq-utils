@@ -85,7 +85,7 @@ fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMa
     if let Some(minifigs) = minifig_inventories.get(&inventory_id) {
         for minifig in minifigs {
             let minifig = model::SetMinifig {
-                number: minifig.fig_num.clone(),
+                number: minifig.fig_num.clone(), // TODO no clone
                 quantity: minifig.quantity,
             };
             version.minifigs.push(minifig);
@@ -94,10 +94,10 @@ fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMa
     if let Some(parts) = part_inventories.get(&inventory_id) {
         for part in parts {
             let part = model::SetPart {
-                number: part.part_num.clone(),
+                number: part.part_num.clone(), // TODO no clone
                 quantity: part.quantity,
-                color_id: part.color_id,
-                img_url: part.img_url.clone(),
+                color_id: part.color_id + 1,
+                img_url: part.img_url.clone(), // TODO no clone
                 is_spare: part.is_spare == "True",
             };
             version.parts.push(part);
@@ -173,8 +173,8 @@ fn sanitize_and_case(s: &str) -> String {
         ("!", " exclam "),
         (",", " "),
         (".", " "),
-        ("'", ""),  // remove single quotes
-        ("\"", ""), // remove double quotes
+        ("'", ""),  
+        ("\"", ""), 
         ("@", " at "),
         ("#", " number "),
         (":", " "),
