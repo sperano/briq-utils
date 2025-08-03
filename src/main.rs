@@ -22,6 +22,10 @@ enum Commands {
         #[arg(short, long)]
         workdir: String,
     },
+    Validate {
+        #[arg(short, long)]
+        workdir: String,
+    },
 }
 
 fn color_csv_to_model(color: csv::ColorRecord) -> model::Color {
@@ -75,7 +79,7 @@ fn set_csv_to_model(set: csv::SetRecord) -> model::Set {
     }
 }
 
-fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMap<u32, Vec<csv::InventoryMinifigRecord>>, part_inventories: &HashMap<u32, Vec<csv::InventoryPartRecord>>) -> model::SetVersion {
+fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMap<u32, Vec<csv::InventoryMinifigRecord>>, part_inventories: &HashMap<u32, Vec<csv::InventoryPartRecord>>, all_parts_keys: &HashMap<String, bool>) -> model::SetVersion {
     let mut version = model::SetVersion {
         version,
         minifigs: vec![],
@@ -93,14 +97,18 @@ fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMa
     }
     if let Some(parts) = part_inventories.get(&inventory_id) {
         for part in parts {
-            let part = model::SetPart {
-                number: part.part_num.clone(), // TODO no clone
-                quantity: part.quantity,
-                color_id: part.color_id + 1,
-                img_url: part.img_url.clone(), // TODO no clone
-                is_spare: part.is_spare == "True",
-            };
-            version.parts.push(part);
+            if all_parts_keys.contains_key(&part.part_num) {
+                let part = model::SetPart {
+                    number: part.part_num.clone(), // TODO no clone
+                    quantity: part.quantity,
+                    color_id: part.color_id + 1,
+                    img_url: part.img_url.clone(), // TODO no clone
+                    is_spare: part.is_spare == "True",
+                };
+                version.parts.push(part);
+            } else {
+                eprintln!("Set Version {}: Ignoring part {}: does not exist", version.version, part.part_num);
+            }
         }
     }
     version
@@ -116,7 +124,9 @@ fn convert_to_model(csv_data: csv::Data) -> Box<model::Data> {
         themes.push(theme_csv_to_model(theme));
     }
     let mut parts: Vec<model::Part> = Vec::with_capacity(csv_data.parts.len());
+    let mut parts_map: HashMap<String, bool> = HashMap::new();
     for part in csv_data.parts.into_iter() {
+        parts_map.insert(part.part_num.clone(), true);
         parts.push(part_csv_to_model(part));
     }
     let mut minifigs: Vec<model::Minifig> = Vec::with_capacity(csv_data.minifigs.len());
@@ -143,7 +153,7 @@ fn convert_to_model(csv_data: csv::Data) -> Box<model::Data> {
         let mut set = set_csv_to_model(set);
         if let Some(versions) = set_inventories.get(&set.number) {
             for version in versions {
-                let version = get_set_version(version.0, version.1, &minifig_inventories, &part_inventories);
+                let version = get_set_version(version.0, version.1, &minifig_inventories, &part_inventories, &parts_map);
                 set.versions.push(version);
             }
         }
@@ -214,6 +224,21 @@ fn main() -> Result<()> {
                     println!("Generating Swift code...");
                     let swift_code = generate_swift_code(tup.1);
                     fs::write(workdir.join("PartCategories.swift"), swift_code)?;
+                }
+                Err(err) => {
+                    eprintln!("{}", err);
+                    return Err(err)
+                }
+            }
+            Ok(())
+        }
+        Commands::Validate { workdir } => {
+            println!("Reading all CSV data...");
+            match csv::read_all(workdir) {
+                Ok(tup) => {
+                    //let workdir: PathBuf = workdir.into();
+                    println!("Validating data...");
+                    csv::validate(&tup.0);
                 }
                 Err(err) => {
                     eprintln!("{}", err);

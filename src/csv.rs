@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::path::PathBuf;
+use std::collections::{HashMap};
 use anyhow::{Result};
 use csv::Reader;
 
@@ -136,3 +137,23 @@ pub fn read_all(workdir: &str) -> Result<Box<(Data, Vec<PartCategoryRecord>)>> {
     Ok(Box::new((data, part_categories)))
 }
 
+pub fn validate(data: &Data) {
+    let mut parts_map: HashMap<String, bool> = HashMap::new();
+    for part in &data.parts {
+        parts_map.insert(part.part_num.clone(), true);
+    }
+    for part in &data.inventories_parts {
+        if !parts_map.contains_key(&part.part_num) {
+            eprintln!("{}: part does not exist", part.part_num)
+        }
+    }
+    let mut minifigs_map: HashMap<String, bool> = HashMap::new();
+    for minifig in &data.minifigs {
+        minifigs_map.insert(minifig.fig_num.clone(), true);
+    }
+    for minifig in &data.inventories_minifigs {
+        if !minifigs_map.contains_key(&minifig.fig_num) {
+            eprintln!("{}: minifig does not exist", minifig.fig_num);
+        }
+    }
+}
