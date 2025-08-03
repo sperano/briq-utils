@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{PathBuf};
 use anyhow::{Result};
 use clap::{Parser, Subcommand};
+use convert_case::{Case, Casing};
 
 mod csv;
 mod model;
@@ -62,6 +63,49 @@ fn minifig_csv_to_model(minifig: csv::MinifigRecord) -> model::Minifig {
     }
 }
 
+fn set_csv_to_model(set: csv::SetRecord) -> model::Set {
+    model::Set {
+        number: set.set_num,
+        name: set.name,
+        year: set.year,
+        parts_count: set.num_parts,
+        theme_id: set.theme_id,
+        img_url: set.img_url,
+        versions: vec![],
+    }
+}
+
+fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMap<u32, Vec<csv::InventoryMinifigRecord>>, part_inventories: &HashMap<u32, Vec<csv::InventoryPartRecord>>) -> model::SetVersion {
+    let mut version = model::SetVersion {
+        version,
+        minifigs: vec![],
+        parts: vec![],
+    };
+
+    if let Some(minifigs) = minifig_inventories.get(&inventory_id) {
+        for minifig in minifigs {
+            let minifig = model::SetMinifig {
+                number: minifig.fig_num.clone(),
+                quantity: minifig.quantity,
+            };
+            version.minifigs.push(minifig);
+        } 
+    }
+    if let Some(parts) = part_inventories.get(&inventory_id) {
+        for part in parts {
+            let part = model::SetPart {
+                number: part.part_num.clone(),
+                quantity: part.quantity,
+                color_id: part.color_id,
+                img_url: part.img_url.clone(),
+                is_spare: part.is_spare == "True",
+            };
+            version.parts.push(part);
+        }
+    }
+    version
+}
+
 fn convert_to_model(csv_data: csv::Data) -> Box<model::Data> {
     let mut colors: Vec<model::Color> = Vec::with_capacity(csv_data.colors.len());
     for color in csv_data.colors.into_iter() {
@@ -96,44 +140,10 @@ fn convert_to_model(csv_data: csv::Data) -> Box<model::Data> {
     }
     let mut sets: Vec<model::Set> = Vec::with_capacity(csv_data.sets.len());
     for set in csv_data.sets.into_iter() {
-        let mut set = model::Set {
-            number: set.set_num,
-            name: set.name,
-            year: set.year,
-            parts_count: set.num_parts,
-            theme_id: set.theme_id,
-            img_url: set.img_url,
-            versions: vec![],
-        };
+        let mut set = set_csv_to_model(set);
         if let Some(versions) = set_inventories.get(&set.number) {
             for version in versions {
-                let inventory_id = version.0;
-                let mut version = model::SetVersion {
-                    version: version.1,
-                    minifigs: vec![],
-                    parts: vec![],
-                };
-                if let Some(minifigs) = minifig_inventories.get(&inventory_id) {
-                    for minifig in minifigs {
-                        let minifig = model::SetMinifig {
-                            number: minifig.fig_num.clone(),
-                            quantity: minifig.quantity,
-                        };
-                        version.minifigs.push(minifig);
-                    } 
-                }
-                if let Some(parts) = part_inventories.get(&inventory_id) {
-                    for part in parts {
-                        let part = model::SetPart {
-                            number: part.part_num.clone(),
-                            quantity: part.quantity,
-                            color_id: part.color_id,
-                            img_url: part.img_url.clone(),
-                            is_spare: part.is_spare == "True",
-                        };
-                        version.parts.push(part);
-                    }
-                }
+                let version = get_set_version(version.0, version.1, &minifig_inventories, &part_inventories);
                 set.versions.push(version);
             }
         }
@@ -149,7 +159,42 @@ fn convert_to_model(csv_data: csv::Data) -> Box<model::Data> {
 }
 
 fn generate_swift_code(part_categories: Vec<csv::PartCategoryRecord>) -> String {
-    String::from("foo")
+    let mut lines = vec![String::from("enum PartCategory: Int {")];
+    for cat in part_categories.into_iter() {
+        lines.push(format!("   case {} = {}", sanitize_and_case(&cat.name), cat.id))
+    }
+    lines.push(String::from("}"));
+    lines.join("\n")
+}
+
+fn sanitize_and_case(s: &str) -> String {
+    let replacements = [
+        ("&", " and "),
+        ("!", " exclam "),
+        (",", " "),
+        (".", " "),
+        ("'", ""),  // remove single quotes
+        ("\"", ""), // remove double quotes
+        ("@", " at "),
+        ("#", " number "),
+        (":", " "),
+        (";", " "),
+        ("(", " "),
+        (")", " "),
+        ("[", " "),
+        ("]", " "),
+        ("{", " "),
+        ("}", " "),
+        ("/", " "),
+        ("\\", " "),
+        ("*", " "),
+        ("?", " "),
+    ];
+    let mut cleaned = s.to_owned();
+    for (from, to) in replacements {
+        cleaned = cleaned.replace(from, to);
+    }
+    cleaned.to_case(Case::Camel)
 }
 
 fn main() -> Result<()> {
