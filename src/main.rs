@@ -26,6 +26,10 @@ enum Commands {
         #[arg(short, long)]
         workdir: String,
     },
+    Analyze {
+        #[arg(short, long)]
+        workdir: String,
+    }
 }
 
 fn color_csv_to_model(color: csv::ColorRecord) -> model::Color {
@@ -239,6 +243,35 @@ fn main() -> Result<()> {
                     //let workdir: PathBuf = workdir.into();
                     println!("Validating data...");
                     csv::validate(&tup.0);
+                }
+                Err(err) => {
+                    eprintln!("{}", err);
+                    return Err(err)
+                }
+            }
+            Ok(())
+        },
+        Commands::Analyze { workdir } => {
+            println!("Reading all CSV data...");
+            match csv::read_all(workdir) {
+                Ok(tup) => {
+                    println!("Converting data to BRIQ model...");
+                    let data = convert_to_model(tup.0);
+                    println!("Analyzing data...");
+                    let mut count = 0;
+                    let mut count2 = 0;
+                    for set in &data.sets {
+                        if set.versions.len() > 1 {
+                            //println!("{} {}: {} versions", set.number, set.name, set.versions.len());
+                            count += 1;
+                            if set.versions.len() > 2 {
+                                count2 += 1
+                            }
+                        }
+                    }
+                    let avg = ((count as f32) / (data.sets.len() as f32)) * 100.0;
+                    let avg2 = ((count2 as f32) / (data.sets.len() as f32)) * 100.0;
+                    println!("{} sets has more than 1 version ({:.1}% of sets). {} sets has more than 2 versions ({:.1}%).", count, avg+0.5, count2, avg2+0.5);
                 }
                 Err(err) => {
                     eprintln!("{}", err);

@@ -123,8 +123,9 @@ make_csv_reader!(read_themes, ThemeRecord);
 
 pub fn read_all(workdir: &str) -> Result<Box<(Data, Vec<PartCategoryRecord>)>> {
     let workdir: PathBuf = workdir.into();
+    let colors = read_csv!(workdir, "colors.csv", read_colors);
     let data = Data{
-        colors: read_csv!(workdir, "colors.csv", read_colors),
+        colors,
         inventories: read_csv!(workdir, "inventories.csv", read_inventories),
         inventories_minifigs: read_csv!(workdir, "inventory-minifigs.csv", read_inventories_minifigs),
         inventories_parts: read_csv!(workdir, "inventory-parts.csv", read_inventories_parts),

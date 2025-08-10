@@ -34,3 +34,5 @@ target
 
 # development work directory
 work/
+
+.DS_Store

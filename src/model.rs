@@ -70,9 +70,18 @@ pub struct Theme {
 #[derive(Debug, serde::Serialize)]
 pub struct Data {
     pub colors: Vec<Color>,
+    //color_ids: HashMap<i32, usize>,
     pub minifigs: Vec<Minifig>,
     pub parts: Vec<Part>,
     pub sets: Vec<Set>,
     pub themes: Vec<Theme>,
 }
 
+// impl Data {
+//     fn load_color_ids_map(&mut self) {
+//         for (i, color) in self.colors.iter().enumerate() {
+//             self.color_ids.insert(color.id, i);
+//         }
+//     }  
+// }
+//
