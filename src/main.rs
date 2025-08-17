@@ -4,8 +4,12 @@ use std::path::{PathBuf};
 use anyhow::{Result};
 use clap::{Parser, Subcommand};
 use convert_case::{Case, Casing};
+use rand::seq::SliceRandom;
+use rand::rng; 
 
+mod cache;
 mod csv;
+mod generator;
 mod model;
 
 #[derive(Parser)]
@@ -27,6 +31,12 @@ enum Commands {
         workdir: String,
     },
     Analyze {
+        #[arg(short, long)]
+        workdir: String,
+    },
+    Mirror {
+        #[arg(short, long)]
+        cache: String,
         #[arg(short, long)]
         workdir: String,
     }
@@ -119,10 +129,10 @@ fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMa
 }
 
 fn convert_to_model(csv_data: csv::Data) -> Box<model::Data> {
-    let mut colors: Vec<model::Color> = Vec::with_capacity(csv_data.colors.len());
-    for color in csv_data.colors.into_iter() {
-        colors.push(color_csv_to_model(color));
-    }
+    //let mut colors: Vec<model::Color> = Vec::with_capacity(csv_data.colors.len());
+    // for color in csv_data.colors.into_iter() {
+    //     colors.push(color_csv_to_model(color));
+    // }
     let mut themes: Vec<model::Theme> = Vec::with_capacity(csv_data.themes.len());
     for theme in csv_data.themes.into_iter() {
         themes.push(theme_csv_to_model(theme));
@@ -164,51 +174,12 @@ fn convert_to_model(csv_data: csv::Data) -> Box<model::Data> {
         sets.push(set);
     }
     Box::new(model::Data{
-        colors,
+        //colors,
         minifigs,
         parts,
         sets,
         themes,
     })
-}
-
-fn generate_swift_code(part_categories: Vec<csv::PartCategoryRecord>) -> String {
-    let mut lines = vec![String::from("enum PartCategory: Int {")];
-    for cat in part_categories.into_iter() {
-        lines.push(format!("   case {} = {}", sanitize_and_case(&cat.name), cat.id))
-    }
-    lines.push(String::from("}"));
-    lines.join("\n")
-}
-
-fn sanitize_and_case(s: &str) -> String {
-    let replacements = [
-        ("&", " and "),
-        ("!", " exclam "),
-        (",", " "),
-        (".", " "),
-        ("'", ""),  
-        ("\"", ""), 
-        ("@", " at "),
-        ("#", " number "),
-        (":", " "),
-        (";", " "),
-        ("(", " "),
-        (")", " "),
-        ("[", " "),
-        ("]", " "),
-        ("{", " "),
-        ("}", " "),
-        ("/", " "),
-        ("\\", " "),
-        ("*", " "),
-        ("?", " "),
-    ];
-    let mut cleaned = s.to_owned();
-    for (from, to) in replacements {
-        cleaned = cleaned.replace(from, to);
-    }
-    cleaned.to_case(Case::Camel)
 }
 
 fn main() -> Result<()> {
@@ -219,6 +190,7 @@ fn main() -> Result<()> {
             println!("Reading all CSV data...");
             match csv::read_all(workdir) {
                 Ok(tup) => {
+                    //let (data, part_cats, colors) = tup;
                     let workdir: PathBuf = workdir.into();
                     println!("Converting data to BRIQ model...");
                     let data = convert_to_model(tup.0);
@@ -226,8 +198,9 @@ fn main() -> Result<()> {
                     let json_string = serde_json::to_string_pretty(&data)?;
                     fs::write(workdir.join("init.json"), json_string)?;
                     println!("Generating Swift code...");
-                    let swift_code = generate_swift_code(tup.1);
-                    fs::write(workdir.join("PartCategories.swift"), swift_code)?;
+                    let (part_cats, part_colors) = generator::generate_swift_code(tup.1, tup.2);
+                    fs::write(workdir.join("PartCategories.swift"), part_cats)?;
+                    fs::write(workdir.join("PartColors.swift"), part_colors)?;
                 }
                 Err(err) => {
                     eprintln!("{}", err);
@@ -279,6 +252,34 @@ fn main() -> Result<()> {
                 }
             }
             Ok(())
+        },
+        Commands::Mirror { cache, workdir } => {
+            println!("Reading all CSV data...");
+            match csv::read_all(workdir) {
+                Ok(tup) => {
+                    let mut urls: Vec<String> = tup.0.inventories_parts.iter().map(|p| p.img_url.clone()).collect();
+                    urls.extend(tup.0.sets.iter().map(|s| s.img_url.clone()));
+                    urls.sort();
+                    urls.dedup();
+                    //urls.reverse();
+                    let mut rng = rng();
+                    urls.shuffle(&mut rng);
+                    let total = urls.len();
+                    let mut i = 0;
+                    for url in urls {
+                        i += 1;
+                        print!("{:.2}% ", (i as f64 / total as f64) * 100.0);
+                        if let Err(err) = cache::mirror(&url, cache) {
+                            eprintln!("{}", err);
+                        }
+                    } 
+                    Ok(())
+                }
+                Err(err) => {
+                    eprintln!("{}", err);
+                    Err(err)
+                }
+            }
         }
     }    
 }

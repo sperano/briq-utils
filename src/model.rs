@@ -69,7 +69,7 @@ pub struct Theme {
 
 #[derive(Debug, serde::Serialize)]
 pub struct Data {
-    pub colors: Vec<Color>,
+    //pub colors: Vec<Color>,
     //color_ids: HashMap<i32, usize>,
     pub minifigs: Vec<Minifig>,
     pub parts: Vec<Part>,

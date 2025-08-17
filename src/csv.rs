@@ -2,6 +2,7 @@ use std::fs::File;
 use std::path::PathBuf;
 use std::collections::{HashMap};
 use anyhow::{Result};
+use clap::builder::styling::Color;
 use csv::Reader;
 
 macro_rules! make_csv_reader {
@@ -101,7 +102,7 @@ pub struct ThemeRecord {
 
 #[derive(Debug)]
 pub struct Data {
-    pub colors: Vec<ColorRecord>,
+    //pub colors: Vec<ColorRecord>,
     pub inventories: Vec<InventoryRecord>,
     pub inventories_minifigs: Vec<InventoryMinifigRecord>,
     pub inventories_parts: Vec<InventoryPartRecord>,
@@ -121,11 +122,11 @@ make_csv_reader!(read_parts, PartRecord);
 make_csv_reader!(read_sets, SetRecord);
 make_csv_reader!(read_themes, ThemeRecord);
 
-pub fn read_all(workdir: &str) -> Result<Box<(Data, Vec<PartCategoryRecord>)>> {
+pub fn read_all(workdir: &str) -> Result<Box<(Data, Vec<PartCategoryRecord>, Vec<ColorRecord>)>> {
     let workdir: PathBuf = workdir.into();
     let colors = read_csv!(workdir, "colors.csv", read_colors);
     let data = Data{
-        colors,
+        //colors,
         inventories: read_csv!(workdir, "inventories.csv", read_inventories),
         inventories_minifigs: read_csv!(workdir, "inventory-minifigs.csv", read_inventories_minifigs),
         inventories_parts: read_csv!(workdir, "inventory-parts.csv", read_inventories_parts),
@@ -135,7 +136,7 @@ pub fn read_all(workdir: &str) -> Result<Box<(Data, Vec<PartCategoryRecord>)>> {
         themes: read_csv!(workdir, "themes.csv", read_themes),
     };
     let part_categories = read_csv!(workdir, "part-categories.csv", read_part_categories);
-    Ok(Box::new((data, part_categories)))
+    Ok(Box::new((data, part_categories, colors)))
 }
 
 pub fn validate(data: &Data) {
