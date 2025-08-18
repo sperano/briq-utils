@@ -3,7 +3,6 @@ use std::fs;
 use std::path::{PathBuf};
 use anyhow::{Result};
 use clap::{Parser, Subcommand};
-use convert_case::{Case, Casing};
 use rand::seq::SliceRandom;
 use rand::rng; 
 
@@ -39,19 +38,6 @@ enum Commands {
         cache: String,
         #[arg(short, long)]
         workdir: String,
-    }
-}
-
-fn color_csv_to_model(color: csv::ColorRecord) -> model::Color {
-    model::Color {
-        id: color.id + 1,
-        name: color.name,
-        rgb: color.rgb,
-        num_parts: color.num_parts,
-        num_sets: color.num_sets,
-        is_transparent: color.is_trans == "True",
-        year1: color.y1,
-        year2: color.y2,
     }
 }
 
@@ -93,7 +79,7 @@ fn set_csv_to_model(set: csv::SetRecord) -> model::Set {
     }
 }
 
-fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMap<u32, Vec<csv::InventoryMinifigRecord>>, part_inventories: &HashMap<u32, Vec<csv::InventoryPartRecord>>, all_parts_keys: &HashMap<String, bool>) -> model::SetVersion {
+fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMap<u32, Vec<csv::InventoryMinifigRecord>>, part_inventories: &HashMap<u32, Vec<csv::InventoryPartRecord>>, all_parts_keys: &HashMap<String, bool>, col_id_map: &HashMap<i32, usize>) -> model::SetVersion {
     let mut version = model::SetVersion {
         version,
         minifigs: vec![],
@@ -115,7 +101,7 @@ fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMa
                 let part = model::SetPart {
                     number: part.part_num.clone(), // TODO no clone
                     quantity: part.quantity,
-                    color_id: part.color_id + 1,
+                    color_id: col_id_map[&part.color_id],
                     img_url: part.img_url.clone(), // TODO no clone
                     is_spare: part.is_spare == "True",
                 };
@@ -129,10 +115,6 @@ fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMa
 }
 
 fn convert_to_model(csv_data: csv::Data) -> Box<model::Data> {
-    //let mut colors: Vec<model::Color> = Vec::with_capacity(csv_data.colors.len());
-    // for color in csv_data.colors.into_iter() {
-    //     colors.push(color_csv_to_model(color));
-    // }
     let mut themes: Vec<model::Theme> = Vec::with_capacity(csv_data.themes.len());
     for theme in csv_data.themes.into_iter() {
         themes.push(theme_csv_to_model(theme));
@@ -167,14 +149,13 @@ fn convert_to_model(csv_data: csv::Data) -> Box<model::Data> {
         let mut set = set_csv_to_model(set);
         if let Some(versions) = set_inventories.get(&set.number) {
             for version in versions {
-                let version = get_set_version(version.0, version.1, &minifig_inventories, &part_inventories, &parts_map);
+                let version = get_set_version(version.0, version.1, &minifig_inventories, &part_inventories, &parts_map, &csv_data.color_ids_map);
                 set.versions.push(version);
             }
         }
         sets.push(set);
     }
     Box::new(model::Data{
-        //colors,
         minifigs,
         parts,
         sets,
@@ -189,18 +170,19 @@ fn main() -> Result<()> {
         Commands::Generate { workdir } => {
             println!("Reading all CSV data...");
             match csv::read_all(workdir) {
-                Ok(tup) => {
-                    //let (data, part_cats, colors) = tup;
+                Ok(data) => {
                     let workdir: PathBuf = workdir.into();
+                    
+                    println!("Generating Swift code...");
+                    let part_cats = generator::part_categories(&data.part_categories);
+                    let part_colors = generator::colors(&data.colors);
+                    fs::write(workdir.join("PartCategories.swift"), part_cats)?;
+                    fs::write(workdir.join("PartColors.swift"), part_colors)?;
                     println!("Converting data to BRIQ model...");
-                    let data = convert_to_model(tup.0);
+                    let data = convert_to_model(*data);
                     println!("Generating JSON...");
                     let json_string = serde_json::to_string_pretty(&data)?;
                     fs::write(workdir.join("init.json"), json_string)?;
-                    println!("Generating Swift code...");
-                    let (part_cats, part_colors) = generator::generate_swift_code(tup.1, tup.2);
-                    fs::write(workdir.join("PartCategories.swift"), part_cats)?;
-                    fs::write(workdir.join("PartColors.swift"), part_colors)?;
                 }
                 Err(err) => {
                     eprintln!("{}", err);
@@ -212,10 +194,10 @@ fn main() -> Result<()> {
         Commands::Validate { workdir } => {
             println!("Reading all CSV data...");
             match csv::read_all(workdir) {
-                Ok(tup) => {
+                Ok(data) => {
                     //let workdir: PathBuf = workdir.into();
                     println!("Validating data...");
-                    csv::validate(&tup.0);
+                    csv::validate(&data);
                 }
                 Err(err) => {
                     eprintln!("{}", err);
@@ -227,9 +209,9 @@ fn main() -> Result<()> {
         Commands::Analyze { workdir } => {
             println!("Reading all CSV data...");
             match csv::read_all(workdir) {
-                Ok(tup) => {
+                Ok(data) => {
                     println!("Converting data to BRIQ model...");
-                    let data = convert_to_model(tup.0);
+                    let data = convert_to_model(*data);
                     println!("Analyzing data...");
                     let mut count = 0;
                     let mut count2 = 0;
@@ -256,12 +238,11 @@ fn main() -> Result<()> {
         Commands::Mirror { cache, workdir } => {
             println!("Reading all CSV data...");
             match csv::read_all(workdir) {
-                Ok(tup) => {
-                    let mut urls: Vec<String> = tup.0.inventories_parts.iter().map(|p| p.img_url.clone()).collect();
-                    urls.extend(tup.0.sets.iter().map(|s| s.img_url.clone()));
+                Ok(data) => {
+                    let mut urls: Vec<String> = data.inventories_parts.iter().map(|p| p.img_url.clone()).collect();
+                    urls.extend(data.sets.iter().map(|s| s.img_url.clone()));
                     urls.sort();
                     urls.dedup();
-                    //urls.reverse();
                     let mut rng = rng();
                     urls.shuffle(&mut rng);
                     let total = urls.len();

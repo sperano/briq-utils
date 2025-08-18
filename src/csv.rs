@@ -2,7 +2,6 @@ use std::fs::File;
 use std::path::PathBuf;
 use std::collections::{HashMap};
 use anyhow::{Result};
-use clap::builder::styling::Color;
 use csv::Reader;
 
 macro_rules! make_csv_reader {
@@ -102,12 +101,14 @@ pub struct ThemeRecord {
 
 #[derive(Debug)]
 pub struct Data {
-    //pub colors: Vec<ColorRecord>,
+    pub colors: Vec<ColorRecord>,
+    pub color_ids_map: HashMap<i32, usize>,
     pub inventories: Vec<InventoryRecord>,
     pub inventories_minifigs: Vec<InventoryMinifigRecord>,
     pub inventories_parts: Vec<InventoryPartRecord>,
     pub minifigs: Vec<MinifigRecord>,
     pub parts: Vec<PartRecord>,
+    pub part_categories: Vec<PartCategoryRecord>,
     pub sets: Vec<SetRecord>,
     pub themes: Vec<ThemeRecord>,
 }
@@ -122,21 +123,27 @@ make_csv_reader!(read_parts, PartRecord);
 make_csv_reader!(read_sets, SetRecord);
 make_csv_reader!(read_themes, ThemeRecord);
 
-pub fn read_all(workdir: &str) -> Result<Box<(Data, Vec<PartCategoryRecord>, Vec<ColorRecord>)>> {
+pub fn read_all(workdir: &str) -> Result<Box<Data>> {
     let workdir: PathBuf = workdir.into();
     let colors = read_csv!(workdir, "colors.csv", read_colors);
+    let mut tmp_map: HashMap<usize, i32> = HashMap::new();
+    for (i, col) in colors.iter().enumerate() {
+        tmp_map.insert(i, col.id);
+    }
+    let color_ids_map: HashMap<i32, usize> = tmp_map.into_iter().map(|(k, v)| (v, k)).collect();
     let data = Data{
-        //colors,
+        colors,
+        color_ids_map,
         inventories: read_csv!(workdir, "inventories.csv", read_inventories),
         inventories_minifigs: read_csv!(workdir, "inventory-minifigs.csv", read_inventories_minifigs),
         inventories_parts: read_csv!(workdir, "inventory-parts.csv", read_inventories_parts),
         minifigs: read_csv!(workdir, "minifigs.csv", read_minifigs),
         parts: read_csv!(workdir, "parts.csv", read_parts),
+        part_categories: read_csv!(workdir, "part-categories.csv", read_part_categories),
         sets: read_csv!(workdir, "sets.csv", read_sets),
         themes: read_csv!(workdir, "themes.csv", read_themes),
     };
-    let part_categories = read_csv!(workdir, "part-categories.csv", read_part_categories);
-    Ok(Box::new((data, part_categories, colors)))
+    Ok(Box::new(data))
 }
 
 pub fn validate(data: &Data) {
@@ -159,3 +166,5 @@ pub fn validate(data: &Data) {
         }
     }
 }
+
+
