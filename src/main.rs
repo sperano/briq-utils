@@ -3,8 +3,6 @@ use std::fs;
 use std::path::{PathBuf};
 use anyhow::{Result};
 use clap::{Parser, Subcommand};
-use rand::seq::SliceRandom;
-use rand::rng; 
 
 mod cache;
 mod csv;
@@ -55,7 +53,7 @@ fn minifig_csv_to_model(minifig: csv::MinifigRecord) -> model::Minifig {
         number: minifig.fig_num,
         name: minifig.name,
         parts_count: minifig.num_parts,
-        img_url: minifig.img_url,
+        img_url: convert_asset_url(&minifig.img_url),
     }
 }
 
@@ -66,9 +64,17 @@ fn set_csv_to_model(set: csv::SetRecord) -> model::Set {
         year: set.year,
         parts_count: set.num_parts,
         theme_id: set.theme_id,
-        img_url: set.img_url,
+        img_url: convert_asset_url(&set.img_url),
         versions: vec![],
     }
+}
+
+fn convert_asset_url(url: &str) -> Option<String> {
+    if !url.is_empty() {
+        static PREFIX: &str = "https://cdn.rebrickable.com/media";
+        return Some(format!("https://briq-assets.spe.quebec{}", &url[PREFIX.len()..]));
+    }
+    None
 }
 
 fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMap<u32, Vec<csv::InventoryMinifigRecord>>, part_inventories: &HashMap<u32, Vec<csv::InventoryPartRecord>>, all_parts_keys: &HashMap<String, bool>) -> model::SetVersion {
@@ -94,7 +100,7 @@ fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMa
                     number: part.part_num.clone(), // TODO no clone
                     quantity: part.quantity,
                     color_id: part.color_id.try_into().unwrap(),
-                    img_url: part.img_url.clone(), // TODO no clone
+                    img_url: convert_asset_url(&part.img_url),
                     is_spare: part.is_spare == "True",
                 };
                 version.parts.push(part);
@@ -228,19 +234,24 @@ fn main() -> Result<()> {
             println!("Reading all CSV data...");
             match csv::read_all(workdir) {
                 Ok(data) => {
-                    let mut urls: Vec<String> = data.inventories_parts.iter().map(|p| p.img_url.clone()).collect();
-                    urls.extend(data.sets.iter().map(|s| s.img_url.clone()));
+                    let mut urls: Vec<String> = data.inventories_parts.iter()
+                        .filter(|p| !p.img_url.is_empty())
+                        .map(|p| p.img_url.clone()).collect();
+                    urls.extend(data.sets.iter()
+                        .filter(|s| !s.img_url.is_empty())
+                        .map(|s| s.img_url.clone()));
+                    urls.extend(data.minifigs.iter()
+                        .filter(|m| !m.img_url.is_empty())
+                        .map(|m| m.img_url.clone()));
                     urls.sort();
                     urls.dedup();
-                    let mut rng = rng();
-                    urls.shuffle(&mut rng);
                     let total = urls.len();
                     let mut i = 0;
                     for url in urls {
                         i += 1;
                         print!("{:.2}% ", (i as f64 / total as f64) * 100.0);
                         if let Err(err) = cache::mirror(&url, cache) {
-                            eprintln!("{}", err);
+                            eprintln!("\x1b[31m{} {}\x1b[0m", url, err);
                         }
                     } 
                     Ok(())

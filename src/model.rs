@@ -4,7 +4,7 @@ pub struct Minifig {
     pub number: String,
     pub name: String,
     pub parts_count: u32,
-    pub img_url: String,
+    pub img_url: Option<String>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -22,7 +22,7 @@ pub struct Set {
     pub year: u16,
     pub theme_id: u32,
     pub parts_count: u32, // ? relevant ?? doesn't vary per versions? TODO
-    pub img_url: String,
+    pub img_url: Option<String>,
     pub versions: Vec<SetVersion>,
 } 
 
@@ -45,7 +45,7 @@ pub struct SetPart {
     pub color_id: u32,
     pub quantity: u16,
     pub is_spare: bool,
-    pub img_url: String,
+    pub img_url: Option<String>,
 }
 
 #[derive(Debug, serde::Serialize)]
