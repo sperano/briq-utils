@@ -42,17 +42,10 @@ pub struct SetMinifig {
 #[derive(Debug, serde::Serialize)]
 pub struct SetPart {
     pub number: String,
-    pub color_id: usize,
+    pub color_id: u32,
     pub quantity: u16,
     pub is_spare: bool,
     pub img_url: String,
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct Theme {
-    pub id: u32,
-    pub name: String,
-    pub parent_id: Option<u32>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -60,6 +53,5 @@ pub struct Data {
     pub minifigs: Vec<Minifig>,
     pub parts: Vec<Part>,
     pub sets: Vec<Set>,
-    pub themes: Vec<Theme>,
 }
 

@@ -92,7 +92,7 @@ pub struct SetRecord {
     pub img_url: String,
 } 
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct ThemeRecord {
     pub id: u32,
     pub name: String,
@@ -102,7 +102,6 @@ pub struct ThemeRecord {
 #[derive(Debug)]
 pub struct Data {
     pub colors: Vec<ColorRecord>,
-    pub color_ids_map: HashMap<i32, usize>,
     pub inventories: Vec<InventoryRecord>,
     pub inventories_minifigs: Vec<InventoryMinifigRecord>,
     pub inventories_parts: Vec<InventoryPartRecord>,
@@ -123,17 +122,42 @@ make_csv_reader!(read_parts, PartRecord);
 make_csv_reader!(read_sets, SetRecord);
 make_csv_reader!(read_themes, ThemeRecord);
 
+fn normalize_theme_ids(data: &mut Data) {
+    let mut tmp_map: HashMap<u32, u32> = HashMap::new();
+    for (i, theme) in data.themes.iter().enumerate() {
+        tmp_map.insert(i.try_into().unwrap(), theme.id);
+    }
+    let ids_map: HashMap<u32, u32> = tmp_map.into_iter().map(|(k, v)| (v, k)).collect();
+    for theme in &mut data.themes {
+        theme.id = ids_map[&theme.id];
+        if let Some(parent_id) = theme.parent_id {
+            theme.parent_id = Some(ids_map[&parent_id])
+        }
+    }
+    for set in &mut data.sets {
+        set.theme_id = ids_map[&set.theme_id];
+    } 
+}
+
+fn normalize_color_ids(data: &mut Data) {
+    let mut tmp_map: HashMap<i32, i32> = HashMap::new();
+    for (i, col) in data.colors.iter().enumerate() {
+        tmp_map.insert(i.try_into().unwrap(), col.id);
+    }
+    //println!("{:?}", tmp_map);
+    let ids_map: HashMap<i32, i32> = tmp_map.into_iter().map(|(k, v)| (v, k)).collect();
+    for color in &mut data.colors {
+        color.id = ids_map[&color.id];
+     }
+    for part in &mut data.inventories_parts {
+        part.color_id = ids_map[&part.color_id];
+    }
+}
+
 pub fn read_all(workdir: &str) -> Result<Box<Data>> {
     let workdir: PathBuf = workdir.into();
-    let colors = read_csv!(workdir, "colors.csv", read_colors);
-    let mut tmp_map: HashMap<usize, i32> = HashMap::new();
-    for (i, col) in colors.iter().enumerate() {
-        tmp_map.insert(i, col.id);
-    }
-    let color_ids_map: HashMap<i32, usize> = tmp_map.into_iter().map(|(k, v)| (v, k)).collect();
-    let data = Data{
-        colors,
-        color_ids_map,
+    let mut data = Data{
+        colors: read_csv!(workdir, "colors.csv", read_colors),
         inventories: read_csv!(workdir, "inventories.csv", read_inventories),
         inventories_minifigs: read_csv!(workdir, "inventory-minifigs.csv", read_inventories_minifigs),
         inventories_parts: read_csv!(workdir, "inventory-parts.csv", read_inventories_parts),
@@ -143,7 +167,12 @@ pub fn read_all(workdir: &str) -> Result<Box<Data>> {
         sets: read_csv!(workdir, "sets.csv", read_sets),
         themes: read_csv!(workdir, "themes.csv", read_themes),
     };
+    normalize_color_ids(&mut data);
+    normalize_theme_ids(&mut data);
+
     Ok(Box::new(data))
+
+
 }
 
 pub fn validate(data: &Data) {

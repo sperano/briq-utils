@@ -41,14 +41,6 @@ enum Commands {
     }
 }
 
-fn theme_csv_to_model(theme: csv::ThemeRecord) -> model::Theme {
-    model::Theme {
-        id: theme.id,
-        name: theme.name,
-        parent_id: theme.parent_id,
-    }
-}
-
 fn part_csv_to_model(part: csv::PartRecord) -> model::Part {
     model::Part {
         number: part.part_num,
@@ -79,7 +71,7 @@ fn set_csv_to_model(set: csv::SetRecord) -> model::Set {
     }
 }
 
-fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMap<u32, Vec<csv::InventoryMinifigRecord>>, part_inventories: &HashMap<u32, Vec<csv::InventoryPartRecord>>, all_parts_keys: &HashMap<String, bool>, col_id_map: &HashMap<i32, usize>) -> model::SetVersion {
+fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMap<u32, Vec<csv::InventoryMinifigRecord>>, part_inventories: &HashMap<u32, Vec<csv::InventoryPartRecord>>, all_parts_keys: &HashMap<String, bool>) -> model::SetVersion {
     let mut version = model::SetVersion {
         version,
         minifigs: vec![],
@@ -101,7 +93,7 @@ fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMa
                 let part = model::SetPart {
                     number: part.part_num.clone(), // TODO no clone
                     quantity: part.quantity,
-                    color_id: col_id_map[&part.color_id],
+                    color_id: part.color_id.try_into().unwrap(),
                     img_url: part.img_url.clone(), // TODO no clone
                     is_spare: part.is_spare == "True",
                 };
@@ -115,10 +107,6 @@ fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMa
 }
 
 fn convert_to_model(csv_data: csv::Data) -> Box<model::Data> {
-    let mut themes: Vec<model::Theme> = Vec::with_capacity(csv_data.themes.len());
-    for theme in csv_data.themes.into_iter() {
-        themes.push(theme_csv_to_model(theme));
-    }
     let mut parts: Vec<model::Part> = Vec::with_capacity(csv_data.parts.len());
     let mut parts_map: HashMap<String, bool> = HashMap::new();
     for part in csv_data.parts.into_iter() {
@@ -149,7 +137,7 @@ fn convert_to_model(csv_data: csv::Data) -> Box<model::Data> {
         let mut set = set_csv_to_model(set);
         if let Some(versions) = set_inventories.get(&set.number) {
             for version in versions {
-                let version = get_set_version(version.0, version.1, &minifig_inventories, &part_inventories, &parts_map, &csv_data.color_ids_map);
+                let version = get_set_version(version.0, version.1, &minifig_inventories, &part_inventories, &parts_map);
                 set.versions.push(version);
             }
         }
@@ -159,7 +147,7 @@ fn convert_to_model(csv_data: csv::Data) -> Box<model::Data> {
         minifigs,
         parts,
         sets,
-        themes,
+        //themes,
     })
 }
 
@@ -172,12 +160,13 @@ fn main() -> Result<()> {
             match csv::read_all(workdir) {
                 Ok(data) => {
                     let workdir: PathBuf = workdir.into();
-                    
                     println!("Generating Swift code...");
                     let part_cats = generator::part_categories(&data.part_categories);
-                    let part_colors = generator::colors(&data.colors);
                     fs::write(workdir.join("PartCategories.swift"), part_cats)?;
+                    let part_colors = generator::colors(&data.colors);
                     fs::write(workdir.join("PartColors.swift"), part_colors)?;
+                    let themes = generator::themes(&data.themes);
+                    fs::write(workdir.join("Themes.swift"), themes)?;
                     println!("Converting data to BRIQ model...");
                     let data = convert_to_model(*data);
                     println!("Generating JSON...");
@@ -210,6 +199,7 @@ fn main() -> Result<()> {
             println!("Reading all CSV data...");
             match csv::read_all(workdir) {
                 Ok(data) => {
+                    println!("Themes tree has a max depth of {}", get_themes_tree_depth(&data.themes));
                     println!("Converting data to BRIQ model...");
                     let data = convert_to_model(*data);
                     println!("Analyzing data...");
@@ -217,7 +207,6 @@ fn main() -> Result<()> {
                     let mut count2 = 0;
                     for set in &data.sets {
                         if set.versions.len() > 1 {
-                            //println!("{} {}: {} versions", set.number, set.name, set.versions.len());
                             count += 1;
                             if set.versions.len() > 2 {
                                 count2 += 1
@@ -263,4 +252,27 @@ fn main() -> Result<()> {
             }
         }
     }    
+}
+
+fn get_themes_tree_depth(themes: &[csv::ThemeRecord]) -> u32 {
+    let mut m: HashMap<u32, &csv::ThemeRecord> = HashMap::new();
+    for theme in themes {
+        m.insert(theme.id, theme);
+    }
+    let mut max = 0;
+    for theme in themes {
+        let mut count = 0;
+        let mut th = theme;
+        loop {
+            count += 1;
+            if th.parent_id.is_none() {
+                break
+            }
+            th = m[&th.parent_id.unwrap()]
+        }
+        if count > max {
+            max = count
+        }
+    };
+    max
 }
