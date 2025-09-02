@@ -1,3 +1,4 @@
+use phf::phf_map;
 
 #[derive(Debug, serde::Serialize)]
 pub struct Minifig {
@@ -24,6 +25,9 @@ pub struct Set {
     pub parts_count: u32, // ? relevant ?? doesn't vary per versions? TODO
     pub img_url: Option<String>,
     pub versions: Vec<SetVersion>,
+    pub is_pack: bool,
+    pub is_unreleased: bool,
+    pub is_accessories: bool,
 } 
 
 #[derive(Debug, serde::Serialize)]
@@ -55,3 +59,32 @@ pub struct Data {
     pub sets: Vec<Set>,
 }
 
+static PACKS: phf::Map<&'static str, ()> = phf_map! {
+    "1507-1" => (),
+    "1510-1" => (),
+    "1616-1" => (),
+    "1969-2" => (),
+    "1977-1" => (),
+    "1983-1" => (),
+    "1999-1" => (),
+};
+
+pub fn is_pack(key: &str) -> bool {
+    PACKS.contains_key(key) 
+}
+
+static UNRELEASED: phf::Map<&'static str, ()> = phf_map! {
+    "1526-1" => (),
+};
+
+pub fn is_unreleased(key: &str) -> bool {
+    UNRELEASED.contains_key(key)
+}
+
+static ACCESSORIES: phf::Map<&'static str, ()> = phf_map! {
+   "6921-1" => (), 
+};
+
+pub fn is_accessories(key: &str) -> bool {
+    ACCESSORIES.contains_key(key)
+}
