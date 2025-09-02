@@ -3,9 +3,10 @@ use std::fs;
 use std::path::{PathBuf};
 use anyhow::{Result};
 use clap::{Parser, Subcommand};
-use convert_case::{Case, Casing};
 
+mod cache;
 mod csv;
+mod generator;
 mod model;
 
 #[derive(Parser)]
@@ -29,27 +30,12 @@ enum Commands {
     Analyze {
         #[arg(short, long)]
         workdir: String,
-    }
-}
-
-fn color_csv_to_model(color: csv::ColorRecord) -> model::Color {
-    model::Color {
-        id: color.id + 1,
-        name: color.name,
-        rgb: color.rgb,
-        num_parts: color.num_parts,
-        num_sets: color.num_sets,
-        is_transparent: color.is_trans == "True",
-        year1: color.y1,
-        year2: color.y2,
-    }
-}
-
-fn theme_csv_to_model(theme: csv::ThemeRecord) -> model::Theme {
-    model::Theme {
-        id: theme.id,
-        name: theme.name,
-        parent_id: theme.parent_id,
+    },
+    Mirror {
+        #[arg(short, long)]
+        cache: String,
+        #[arg(short, long)]
+        workdir: String,
     }
 }
 
@@ -67,7 +53,7 @@ fn minifig_csv_to_model(minifig: csv::MinifigRecord) -> model::Minifig {
         number: minifig.fig_num,
         name: minifig.name,
         parts_count: minifig.num_parts,
-        img_url: minifig.img_url,
+        img_url: convert_asset_url(&minifig.img_url),
     }
 }
 
@@ -78,9 +64,17 @@ fn set_csv_to_model(set: csv::SetRecord) -> model::Set {
         year: set.year,
         parts_count: set.num_parts,
         theme_id: set.theme_id,
-        img_url: set.img_url,
+        img_url: convert_asset_url(&set.img_url),
         versions: vec![],
     }
+}
+
+fn convert_asset_url(url: &str) -> Option<String> {
+    if !url.is_empty() {
+        static PREFIX: &str = "https://cdn.rebrickable.com/media";
+        return Some(format!("https://briq-assets.spe.quebec{}", &url[PREFIX.len()..]));
+    }
+    None
 }
 
 fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMap<u32, Vec<csv::InventoryMinifigRecord>>, part_inventories: &HashMap<u32, Vec<csv::InventoryPartRecord>>, all_parts_keys: &HashMap<String, bool>) -> model::SetVersion {
@@ -105,8 +99,8 @@ fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMa
                 let part = model::SetPart {
                     number: part.part_num.clone(), // TODO no clone
                     quantity: part.quantity,
-                    color_id: part.color_id + 1,
-                    img_url: part.img_url.clone(), // TODO no clone
+                    color_id: part.color_id.try_into().unwrap(),
+                    img_url: convert_asset_url(&part.img_url),
                     is_spare: part.is_spare == "True",
                 };
                 version.parts.push(part);
@@ -119,14 +113,6 @@ fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMa
 }
 
 fn convert_to_model(csv_data: csv::Data) -> Box<model::Data> {
-    let mut colors: Vec<model::Color> = Vec::with_capacity(csv_data.colors.len());
-    for color in csv_data.colors.into_iter() {
-        colors.push(color_csv_to_model(color));
-    }
-    let mut themes: Vec<model::Theme> = Vec::with_capacity(csv_data.themes.len());
-    for theme in csv_data.themes.into_iter() {
-        themes.push(theme_csv_to_model(theme));
-    }
     let mut parts: Vec<model::Part> = Vec::with_capacity(csv_data.parts.len());
     let mut parts_map: HashMap<String, bool> = HashMap::new();
     for part in csv_data.parts.into_iter() {
@@ -164,51 +150,11 @@ fn convert_to_model(csv_data: csv::Data) -> Box<model::Data> {
         sets.push(set);
     }
     Box::new(model::Data{
-        colors,
         minifigs,
         parts,
         sets,
-        themes,
+        //themes,
     })
-}
-
-fn generate_swift_code(part_categories: Vec<csv::PartCategoryRecord>) -> String {
-    let mut lines = vec![String::from("enum PartCategory: Int {")];
-    for cat in part_categories.into_iter() {
-        lines.push(format!("   case {} = {}", sanitize_and_case(&cat.name), cat.id))
-    }
-    lines.push(String::from("}"));
-    lines.join("\n")
-}
-
-fn sanitize_and_case(s: &str) -> String {
-    let replacements = [
-        ("&", " and "),
-        ("!", " exclam "),
-        (",", " "),
-        (".", " "),
-        ("'", ""),  
-        ("\"", ""), 
-        ("@", " at "),
-        ("#", " number "),
-        (":", " "),
-        (";", " "),
-        ("(", " "),
-        (")", " "),
-        ("[", " "),
-        ("]", " "),
-        ("{", " "),
-        ("}", " "),
-        ("/", " "),
-        ("\\", " "),
-        ("*", " "),
-        ("?", " "),
-    ];
-    let mut cleaned = s.to_owned();
-    for (from, to) in replacements {
-        cleaned = cleaned.replace(from, to);
-    }
-    cleaned.to_case(Case::Camel)
 }
 
 fn main() -> Result<()> {
@@ -218,16 +164,20 @@ fn main() -> Result<()> {
         Commands::Generate { workdir } => {
             println!("Reading all CSV data...");
             match csv::read_all(workdir) {
-                Ok(tup) => {
+                Ok(data) => {
                     let workdir: PathBuf = workdir.into();
+                    println!("Generating Swift code...");
+                    let part_cats = generator::part_categories(&data.part_categories);
+                    fs::write(workdir.join("PartCategories.swift"), part_cats)?;
+                    let part_colors = generator::colors(&data.colors);
+                    fs::write(workdir.join("PartColors.swift"), part_colors)?;
+                    let themes = generator::themes(&data.themes);
+                    fs::write(workdir.join("Themes.swift"), themes)?;
                     println!("Converting data to BRIQ model...");
-                    let data = convert_to_model(tup.0);
+                    let data = convert_to_model(*data);
                     println!("Generating JSON...");
                     let json_string = serde_json::to_string_pretty(&data)?;
                     fs::write(workdir.join("init.json"), json_string)?;
-                    println!("Generating Swift code...");
-                    let swift_code = generate_swift_code(tup.1);
-                    fs::write(workdir.join("PartCategories.swift"), swift_code)?;
                 }
                 Err(err) => {
                     eprintln!("{}", err);
@@ -239,10 +189,10 @@ fn main() -> Result<()> {
         Commands::Validate { workdir } => {
             println!("Reading all CSV data...");
             match csv::read_all(workdir) {
-                Ok(tup) => {
+                Ok(data) => {
                     //let workdir: PathBuf = workdir.into();
                     println!("Validating data...");
-                    csv::validate(&tup.0);
+                    csv::validate(&data);
                 }
                 Err(err) => {
                     eprintln!("{}", err);
@@ -254,15 +204,15 @@ fn main() -> Result<()> {
         Commands::Analyze { workdir } => {
             println!("Reading all CSV data...");
             match csv::read_all(workdir) {
-                Ok(tup) => {
+                Ok(data) => {
+                    println!("Themes tree has a max depth of {}", get_themes_tree_depth(&data.themes));
                     println!("Converting data to BRIQ model...");
-                    let data = convert_to_model(tup.0);
+                    let data = convert_to_model(*data);
                     println!("Analyzing data...");
                     let mut count = 0;
                     let mut count2 = 0;
                     for set in &data.sets {
                         if set.versions.len() > 1 {
-                            //println!("{} {}: {} versions", set.number, set.name, set.versions.len());
                             count += 1;
                             if set.versions.len() > 2 {
                                 count2 += 1
@@ -279,6 +229,61 @@ fn main() -> Result<()> {
                 }
             }
             Ok(())
+        },
+        Commands::Mirror { cache, workdir } => {
+            println!("Reading all CSV data...");
+            match csv::read_all(workdir) {
+                Ok(data) => {
+                    let mut urls: Vec<String> = data.inventories_parts.iter()
+                        .filter(|p| !p.img_url.is_empty())
+                        .map(|p| p.img_url.clone()).collect();
+                    urls.extend(data.sets.iter()
+                        .filter(|s| !s.img_url.is_empty())
+                        .map(|s| s.img_url.clone()));
+                    urls.extend(data.minifigs.iter()
+                        .filter(|m| !m.img_url.is_empty())
+                        .map(|m| m.img_url.clone()));
+                    urls.sort();
+                    urls.dedup();
+                    let total = urls.len();
+                    let mut i = 0;
+                    for url in urls {
+                        i += 1;
+                        print!("{:.2}% ", (i as f64 / total as f64) * 100.0);
+                        if let Err(err) = cache::mirror(&url, cache) {
+                            eprintln!("\x1b[31m{} {}\x1b[0m", url, err);
+                        }
+                    } 
+                    Ok(())
+                }
+                Err(err) => {
+                    eprintln!("{}", err);
+                    Err(err)
+                }
+            }
         }
     }    
+}
+
+fn get_themes_tree_depth(themes: &[csv::ThemeRecord]) -> u32 {
+    let mut m: HashMap<u32, &csv::ThemeRecord> = HashMap::new();
+    for theme in themes {
+        m.insert(theme.id, theme);
+    }
+    let mut max = 0;
+    for theme in themes {
+        let mut count = 0;
+        let mut th = theme;
+        loop {
+            count += 1;
+            if th.parent_id.is_none() {
+                break
+            }
+            th = m[&th.parent_id.unwrap()]
+        }
+        if count > max {
+            max = count
+        }
+    };
+    max
 }
