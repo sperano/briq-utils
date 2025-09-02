@@ -57,7 +57,7 @@ fn minifig_csv_to_model(minifig: csv::MinifigRecord) -> model::Minifig {
     }
 }
 
-fn set_csv_to_model(set: csv::SetRecord) -> model::Set {
+fn set_csv_to_model(set: csv::SetRecord, is_pack: bool, is_unreleased: bool, is_accessories: bool) -> model::Set {
     model::Set {
         number: set.set_num,
         name: set.name,
@@ -66,6 +66,9 @@ fn set_csv_to_model(set: csv::SetRecord) -> model::Set {
         theme_id: set.theme_id,
         img_url: convert_asset_url(&set.img_url),
         versions: vec![],
+        is_pack,
+        is_unreleased,
+        is_accessories,
     }
 }
 
@@ -140,7 +143,8 @@ fn convert_to_model(csv_data: csv::Data) -> Box<model::Data> {
     }
     let mut sets: Vec<model::Set> = Vec::with_capacity(csv_data.sets.len());
     for set in csv_data.sets.into_iter() {
-        let mut set = set_csv_to_model(set);
+        let key = set.set_num.clone();
+        let mut set = set_csv_to_model(set, model::is_pack(&key), model::is_unreleased(&key), model::is_accessories(&key));
         if let Some(versions) = set_inventories.get(&set.number) {
             for version in versions {
                 let version = get_set_version(version.0, version.1, &minifig_inventories, &part_inventories, &parts_map);
