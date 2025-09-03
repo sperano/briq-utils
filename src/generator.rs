@@ -65,17 +65,17 @@ pub fn themes(themes: &Vec<ThemeRecord>) -> String {
     lines.join("\n")
 }
 
-pub fn sets(sets: &Vec<Set>) -> String {
-    let mut lines = vec![
-        String::from(DO_NOT_EDIT),
-        String::from("\nlet allSets: [Set] = ["),
-    ];
-    for set in sets {
-        lines.push(format!("    Set(number: \"{}\", name: \"{}\"),", set.number, set.name));
-    }
-    lines.push(String::from("]"));
-    lines.join("\n")
-}
+// pub fn sets(sets: &Vec<Set>) -> String {
+//     let mut lines = vec![
+//         String::from(DO_NOT_EDIT),
+//         String::from("\nlet allSets: [Set] = ["),
+//     ];
+//     for set in sets {
+//         lines.push(format!("    Set(number: \"{}\", name: \"{}\"),", set.number, set.name.replace("\"", "\\\"")));
+//     }
+//     lines.push(String::from("]"));
+//     lines.join("\n")
+// }
 
 pub fn sanitize_and_case(s: &str) -> String {
     let replacements = [

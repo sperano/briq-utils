@@ -62,9 +62,9 @@ fn main() -> Result<()> {
                     fs::write(workdir.join("Themes.swift"), themes)?;
                     println!("Converting data to BRIQ model...");
                     let data = model::convert(*data);
-                    println!("Generating more Swift code...");
-                    let sets = generator::sets(&data.sets);
-                    fs::write(workdir.join("Sets.swift"), sets)?;
+                    // println!("Generating more Swift code...");
+                    // let sets = generator::sets(&data.sets);
+                    // fs::write(workdir.join("Sets.swift"), sets)?;
                     println!("Generating JSON...");
                     let json_string = serde_json::to_string_pretty(&data)?;
                     fs::write(workdir.join("init.json"), json_string)?;
