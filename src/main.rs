@@ -105,6 +105,7 @@ fn main() -> Result<()> {
                     println!("Analyzing data...");
                     let mut count = 0;
                     let mut count2 = 0;
+                    let mut count3 = 0;
                     for set in &data.sets {
                         if set.versions.len() > 1 {
                             count += 1;
@@ -112,11 +113,19 @@ fn main() -> Result<()> {
                                 count2 += 1
                             }
                         }
+                        let last = set.versions.last().unwrap();
+                        let total: u16 = last.parts.iter().map(|x| x.quantity).sum();
+                        if (set.parts_count as u16) != total {
+                            eprintln!("Set {}: parts_count={} parts.len={}", set.number, set.parts_count, total);
+                            count3 += 1;
+                        }
                     }
                     let avg = ((count as f32) / (data.sets.len() as f32)) * 100.0;
                     let avg2 = ((count2 as f32) / (data.sets.len() as f32)) * 100.0;
+                    let avg3 = ((count3 as f32) / (data.sets.len() as f32)) * 100.0;
                     println!("{} has more than 1 version ({:.1}% of sets). {} has more than 2 versions ({:.1}%).", 
                         plrze(count, "set"), avg+0.5, plrze(count2, "set"), avg2+0.5);
+                    println!("{} ({:.1}%) has a parts_count mismatch.", plrze(count3, "set"), avg3);
                     if let Some(set) = set {
                         let number = set;
                         let set = data.sets.iter().find(|&s| s.number == *set);

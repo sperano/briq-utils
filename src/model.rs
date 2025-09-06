@@ -24,6 +24,8 @@ pub struct Part {
 #[derive(Debug)]
 pub struct Set {
     pub number: String,
+    pub is_us_number: bool,
+    pub same_as_number: Option<String>,
     pub name: String,
     pub year: u16,
     pub theme_id: u32,
@@ -32,7 +34,8 @@ pub struct Set {
     pub is_pack: bool,
     pub is_unreleased: bool,
     pub is_accessories: bool,
-    pub versions: Vec<SetVersion>, 
+    pub versions: Vec<SetVersion>,  // will not be serialized, instead it will be the minifigs and
+                                    // parts of the last version
 } 
 
 impl Set {
@@ -51,6 +54,8 @@ impl Serialize for Set {
     {
         let mut state = serializer.serialize_struct("Set", 2)?;
         state.serialize_field("number", &self.number)?;
+        state.serialize_field("is_us_number", &self.is_us_number)?;
+        state.serialize_field("same_as_number", &self.same_as_number)?;
         state.serialize_field("name", &self.name)?;
         state.serialize_field("year", &self.year)?;
         state.serialize_field("theme_id", &self.theme_id)?;
@@ -83,7 +88,6 @@ pub struct SetPart {
     pub number: String,
     pub color_id: u32,
     pub quantity: u16,
-    pub is_spare: bool,
     pub img_url: Option<String>,
 }
 
@@ -113,14 +117,15 @@ fn get_set_version(inventory_id: u32, version: u16, minifig_inventories: &HashMa
     if let Some(parts) = part_inventories.get(&inventory_id) {
         for part in parts {
             if all_parts_keys.contains_key(&part.part_num) {
-                let part = SetPart {
-                    number: part.part_num.clone(), // TODO no clone
-                    quantity: part.quantity,
-                    color_id: part.color_id.try_into().unwrap(),
-                    img_url: convert_asset_url(&part.img_url),
-                    is_spare: part.is_spare == "True",
-                };
-                version.parts.push(part);
+                if part.is_spare != "True" {
+                    let part = SetPart {
+                        number: part.part_num.clone(), // TODO no clone
+                        quantity: part.quantity,
+                        color_id: part.color_id.try_into().unwrap(),
+                        img_url: convert_asset_url(&part.img_url),
+                    };
+                    version.parts.push(part);
+                }
             } else {
                 eprintln!("Set Version {}: Ignoring part {}: does not exist", version.version, part.part_num);
             }
@@ -189,12 +194,22 @@ fn minifig_csv_to_model(minifig: MinifigRecord) -> Minifig {
         name: minifig.name,
         parts_count: minifig.num_parts,
         img_url: convert_asset_url(&minifig.img_url),
-}
+    }
 }
 
 fn set_csv_to_model(set: SetRecord, is_pack: bool, is_unreleased: bool, is_accessories: bool) -> Set {
+    let is_us = is_us_number(&set.set_num);
+    let same_as = if is_us {
+        get_intl_number(&set.set_num) 
+    } else if has_us_number(&set.set_num) {
+        Some(get_us_number(&set.set_num).unwrap())
+    } else {
+        None
+    };
     Set {
         number: set.set_num,
+        is_us_number: is_us,
+        same_as_number: same_as,
         name: set.name,
         year: set.year,
         parts_count: set.num_parts,
@@ -235,4 +250,51 @@ static ACCESSORIES: phf::Map<&'static str, ()> = phf_map! {
 
 pub fn is_accessories(key: &str) -> bool {
     ACCESSORIES.contains_key(key)
+}
+
+static US_NUMBERS_TO_INTL: phf::Map<&'static str, Option<&'static str>> = phf_map! {
+    // classic space
+    "442-1" => Some("891-1"),
+    "452-1" => Some("894-1"),
+    "462-1" => Some("897-1"),
+    "483-1" => Some("920-2"),
+    "487-1" => Some("924-1"),
+    "493-1" => None,            // space base with the plate with the crater made of bricks
+    "493-3" => Some("926-1"),
+    "497-1" => Some("928-1"),
+    // classic castle
+    "6075-2" => Some("375-2"),
+};
+
+fn is_us_number(number: &str) -> bool {
+    US_NUMBERS_TO_INTL.contains_key(number)
+}
+
+fn get_intl_number(number: &str) -> Option<String> {
+    if let Some(n) = US_NUMBERS_TO_INTL.get(number) {
+        n.as_ref().map(|n| n.to_string())
+    } else {
+        None
+    }
+}
+
+static INTL_NUMBERS_TO_US: phf::Map<&'static str, &'static str> = phf_map! {
+    // classic space
+    "891-1" => "442-1",
+    "894-1" => "452-1",
+    "897-1" => "462-1",
+    "920-2" => "483-1",
+    "924-1" => "487-1",
+    "926-1" => "493-3",
+    "928-1" => "497-1",    
+    // classic castle
+    "375-2" => "6075-2",
+};
+
+fn has_us_number(number: &str) -> bool {
+    INTL_NUMBERS_TO_US.contains_key(number)
+}
+
+fn get_us_number(number: &str) -> Option<String> {
+    INTL_NUMBERS_TO_US.get(number).map(|n| n.to_string())
 }
