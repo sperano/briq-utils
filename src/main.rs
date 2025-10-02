@@ -22,23 +22,26 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Generate the initial dataset and Swift files inside the working directory
     Generate {
+        /// Path to the working directory
         #[arg(short, long)]
         workdir: String,
     },
-    Validate {
-        #[arg(short, long)]
-        workdir: String,
-    },
+    /// Analyze the data from Rebrickable
     Analyze {
+        /// Path to the working directory
         #[arg(short, long)]
         workdir: String,
         #[arg(short, long)]
         set: Option<String>
     },
+    /// Mirror remote data into a local cache and working dir
     Mirror {
+        /// Path to the cache directory
         #[arg(short, long)]
         cache: String,
+        /// Path to the working directory
         #[arg(short, long)]
         workdir: String,
     }
@@ -76,25 +79,12 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
-        Commands::Validate { workdir } => {
-            println!("Reading all CSV data...");
-            match csv::read_all(workdir) {
-                Ok(data) => {
-                    //let workdir: PathBuf = workdir.into();
-                    println!("Validating data...");
-                    csv::validate(&data);
-                }
-                Err(err) => {
-                    eprintln!("{}", err);
-                    return Err(err)
-                }
-            }
-            Ok(())
-        },
         Commands::Analyze { workdir, set } => {
             println!("Reading all CSV data...");
             match csv::read_all(workdir) {
                 Ok(data) => {
+                    println!("Validating data...");
+                    csv::validate(&data);
                     println!("Themes tree has a max depth of {}", get_themes_tree_depth(&data.themes));
                     let materials = data.parts.iter().map(|p|&p.part_material);
                     let materials: HashSet<_> = materials.into_iter().collect();
@@ -116,7 +106,7 @@ fn main() -> Result<()> {
                         let last = set.versions.last().unwrap();
                         let total: u16 = last.parts.iter().map(|x| x.quantity).sum();
                         if (set.parts_count as u16) != total {
-                            eprintln!("Set {}: parts_count={} parts.len={}", set.number, set.parts_count, total);
+                            //eprintln!("Set {}: parts_count={} parts.len={}", set.number, set.parts_count, total);
                             count3 += 1;
                         }
                     }

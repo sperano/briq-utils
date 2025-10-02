@@ -20,7 +20,7 @@ pub fn colors(colors: &Vec<ColorRecord>) -> String {
     let mut lines = vec![
         String::from(DO_NOT_EDIT),
         String::from(""),
-        String::from("let allColors: [PartColor] = ["),
+        String::from("let AllPartColors: [PartColor] = ["),
     ];
 
     for color in colors {
@@ -42,22 +42,22 @@ pub struct ThemeNode {
 pub fn themes(themes: &Vec<ThemeRecord>) -> String {
     let mut lines = vec![
         String::from(DO_NOT_EDIT), 
-        String::from("\nlet allThemes: [Theme] = ["),
+        String::from("\nlet AllThemes: [Theme] = ["),
     ];
     for theme in themes {
         lines.push(format!("    Theme(id: {}, name: \"{}\"),", theme.id, theme.name))
     }
-    lines.push(String::from("]\n\nlet themesTree: [Theme] = ["));
+    lines.push(String::from("]\n\nlet ThemesTree: [Theme] = ["));
     for theme in themes {
         if theme.parent_id.is_none() {
-            lines.push(format!("    allThemes[{}],", theme.id));
+            lines.push(format!("    AllThemes[{}],", theme.id));
         }
     }
-    lines.push(String::from("].sorted { $0.name < $1.name };\n\nfunc initThemesTree() {"));
+    lines.push(String::from("].sorted { $0.name < $1.name };\n\npublic func initThemesTree() {"));
     for theme in themes {
         if let Some(parent_id) = theme.parent_id {
-            lines.push(format!("    allThemes[{}].parent = allThemes[{}]", theme.id, parent_id));
-            lines.push(format!("    allThemes[{}].children.append(allThemes[{}])", parent_id, theme.id))
+            lines.push(format!("    AllThemes[{}].parent = AllThemes[{}]", theme.id, parent_id));
+            lines.push(format!("    AllThemes[{}].children.append(AllThemes[{}])", parent_id, theme.id))
         }
     }
     lines.push(String::from("}"));
